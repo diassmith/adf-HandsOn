@@ -7,13 +7,13 @@
 			"metadata": "Data Factory name",
 			"defaultValue": "adf-fundamentals"
 		},
+		"AzureSqlDatabase1_properties_typeProperties_connectionString_secretName": {
+			"type": "string",
+			"defaultValue": "AzureSQLDatabase"
+		},
 		"ls_datalake_properties_typeProperties_url": {
 			"type": "string",
 			"defaultValue": "https://adlsadffundamentals.dfs.core.windows.net/"
-		},
-		"ls_dbSQL_properties_typeProperties_connectionString_secretName": {
-			"type": "string",
-			"defaultValue": "AzureSQLDatabase"
 		},
 		"ls_key_vault_properties_typeProperties_baseUrl": {
 			"type": "string",
@@ -25,14 +25,14 @@
 	},
 	"resources": [
 		{
-			"name": "[concat(parameters('factoryName'), '/pl_HandsOn2')]",
+			"name": "[concat(parameters('factoryName'), '/pl_HandsOn3')]",
 			"type": "Microsoft.DataFactory/factories/pipelines",
 			"apiVersion": "2018-06-01",
 			"properties": {
 				"activities": [
 					{
-						"name": "GetMetadata_ReadingParquetFiles",
-						"type": "GetMetadata",
+						"name": "LookupSchema",
+						"type": "Lookup",
 						"dependsOn": [],
 						"policy": {
 							"timeout": "7.00:00:00",
@@ -43,30 +43,29 @@
 						},
 						"userProperties": [],
 						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": "SELECT TABLE_SCHEMA, TABLE_NAME\nFROM INFORMATION_SCHEMA.TABLES \n  WHERE TABLE_TYPE='BASE TABLE'\n  and TABLE_SCHEMA = 'SalesLT'",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
 							"dataset": {
-								"referenceName": "ds_parquetfiles_generic",
+								"referenceName": "ds_dbSQL",
 								"type": "DatasetReference",
 								"parameters": {
-									"containerName": "parquetfiles",
-									"fileName": "*"
+									"schemaName": "*",
+									"tableName": "*"
 								}
 							},
-							"fieldList": [
-								"childItems"
-							],
-							"storeSettings": {
-								"type": "AzureBlobFSReadSettings",
-								"recursive": true,
-								"enablePartitionDiscovery": false
-							}
+							"firstRowOnly": false
 						}
 					},
 					{
-						"name": "ForEach_ParquetFilesList",
+						"name": "ForEach_loop_table",
 						"type": "ForEach",
 						"dependsOn": [
 							{
-								"activity": "GetMetadata_ReadingParquetFiles",
+								"activity": "LookupSchema",
 								"dependencyConditions": [
 									"Succeeded"
 								]
@@ -75,12 +74,12 @@
 						"userProperties": [],
 						"typeProperties": {
 							"items": {
-								"value": "@activity('GetMetadata_ReadingParquetFiles').output.childItems",
+								"value": "@activity('LookupSchema').output.value",
 								"type": "Expression"
 							},
 							"activities": [
 								{
-									"name": "parquet to SQL",
+									"name": "Copy data1",
 									"type": "Copy",
 									"dependsOn": [],
 									"policy": {
@@ -93,19 +92,18 @@
 									"userProperties": [],
 									"typeProperties": {
 										"source": {
-											"type": "ParquetSource",
-											"storeSettings": {
-												"type": "AzureBlobFSReadSettings",
-												"recursive": true,
-												"enablePartitionDiscovery": false
-											}
+											"type": "AzureSqlSource",
+											"queryTimeout": "02:00:00",
+											"partitionOption": "None"
 										},
 										"sink": {
-											"type": "AzureSqlSink",
-											"writeBehavior": "insert",
-											"sqlWriterUseTableLock": false,
-											"tableOption": "autoCreate",
-											"disableMetricsCollection": false
+											"type": "ParquetSink",
+											"storeSettings": {
+												"type": "AzureBlobFSWriteSettings"
+											},
+											"formatSettings": {
+												"type": "ParquetWriteSettings"
+											}
 										},
 										"enableStaging": false,
 										"translator": {
@@ -119,12 +117,15 @@
 									},
 									"inputs": [
 										{
-											"referenceName": "ds_parquetfiles_generic",
+											"referenceName": "ds_dbSQL",
 											"type": "DatasetReference",
 											"parameters": {
-												"containerName": "parquetfiles",
-												"fileName": {
-													"value": "@toLower(item().name)",
+												"schemaName": {
+													"value": "@item().TABLE_SCHEMA",
+													"type": "Expression"
+												},
+												"tableName": {
+													"value": "@item().TABLE_NAME",
 													"type": "Expression"
 												}
 											}
@@ -132,12 +133,12 @@
 									],
 									"outputs": [
 										{
-											"referenceName": "ds_sql_generic",
+											"referenceName": "ds_parquet",
 											"type": "DatasetReference",
 											"parameters": {
-												"schemaName": "SalesLT",
-												"tableName": {
-													"value": "@replace(toLower(item().name),'.parquet' ,'')",
+												"containerName": "parquetfiles/TABLE_SQL/",
+												"fileName": {
+													"value": "@item().TABLE_NAME",
 													"type": "Expression"
 												}
 											}
@@ -146,60 +147,6 @@
 								}
 							]
 						}
-					},
-					{
-						"name": "Procedure_RemovingDuplicatedCities",
-						"type": "SqlServerStoredProcedure",
-						"dependsOn": [
-							{
-								"activity": "ForEach_ParquetFilesList",
-								"dependencyConditions": [
-									"Succeeded"
-								]
-							}
-						],
-						"policy": {
-							"timeout": "7.00:00:00",
-							"retry": 0,
-							"retryIntervalInSeconds": 30,
-							"secureOutput": false,
-							"secureInput": false
-						},
-						"userProperties": [],
-						"typeProperties": {
-							"storedProcedureName": "[[SalesLT].[remove_cities_duplicated]"
-						},
-						"linkedServiceName": {
-							"referenceName": "ls_dbSQL",
-							"type": "LinkedServiceReference"
-						}
-					},
-					{
-						"name": "Procedure_RemovingDuplicateColors",
-						"type": "SqlServerStoredProcedure",
-						"dependsOn": [
-							{
-								"activity": "ForEach_ParquetFilesList",
-								"dependencyConditions": [
-									"Succeeded"
-								]
-							}
-						],
-						"policy": {
-							"timeout": "7.00:00:00",
-							"retry": 0,
-							"retryIntervalInSeconds": 30,
-							"secureOutput": false,
-							"secureInput": false
-						},
-						"userProperties": [],
-						"typeProperties": {
-							"storedProcedureName": "[[SalesLT].[remove_colors_duplicated]"
-						},
-						"linkedServiceName": {
-							"referenceName": "ls_dbSQL",
-							"type": "LinkedServiceReference"
-						}
 					}
 				],
 				"policy": {
@@ -207,18 +154,52 @@
 					"cancelAfter": {}
 				},
 				"folder": {
-					"name": "HandsOn2"
+					"name": "HandsOn3"
 				},
 				"annotations": []
 			},
 			"dependsOn": [
-				"[concat(variables('factoryId'), '/datasets/ds_parquetfiles_generic')]",
-				"[concat(variables('factoryId'), '/linkedServices/ls_dbSQL')]",
-				"[concat(variables('factoryId'), '/datasets/ds_sql_generic')]"
+				"[concat(variables('factoryId'), '/datasets/ds_dbSQL')]",
+				"[concat(variables('factoryId'), '/datasets/ds_parquet')]"
 			]
 		},
 		{
-			"name": "[concat(parameters('factoryName'), '/ds_parquetfiles_generic')]",
+			"name": "[concat(parameters('factoryName'), '/ds_dbSQL')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase1",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"schemaName": {
+						"type": "string"
+					},
+					"tableName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": {
+						"value": "@dataset().schemaName",
+						"type": "Expression"
+					},
+					"table": {
+						"value": "@dataset().tableName",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/AzureSqlDatabase1')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_parquet')]",
 			"type": "Microsoft.DataFactory/factories/datasets",
 			"apiVersion": "2018-06-01",
 			"properties": {
@@ -257,38 +238,25 @@
 			]
 		},
 		{
-			"name": "[concat(parameters('factoryName'), '/ds_sql_generic')]",
-			"type": "Microsoft.DataFactory/factories/datasets",
+			"name": "[concat(parameters('factoryName'), '/AzureSqlDatabase1')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
 			"apiVersion": "2018-06-01",
 			"properties": {
-				"linkedServiceName": {
-					"referenceName": "ls_dbSQL",
-					"type": "LinkedServiceReference"
-				},
-				"parameters": {
-					"schemaName": {
-						"type": "string"
-					},
-					"tableName": {
-						"type": "string"
-					}
-				},
 				"annotations": [],
-				"type": "AzureSqlTable",
-				"schema": [],
+				"type": "AzureSqlDatabase",
 				"typeProperties": {
-					"schema": {
-						"value": "@dataset().schemaName",
-						"type": "Expression"
-					},
-					"table": {
-						"value": "@dataset().tableName",
-						"type": "Expression"
+					"connectionString": {
+						"type": "AzureKeyVaultSecret",
+						"store": {
+							"referenceName": "ls_key_vault",
+							"type": "LinkedServiceReference"
+						},
+						"secretName": "[parameters('AzureSqlDatabase1_properties_typeProperties_connectionString_secretName')]"
 					}
 				}
 			},
 			"dependsOn": [
-				"[concat(variables('factoryId'), '/linkedServices/ls_dbSQL')]"
+				"[concat(variables('factoryId'), '/linkedServices/ls_key_vault')]"
 			]
 		},
 		{
@@ -307,28 +275,6 @@
 							"type": "LinkedServiceReference"
 						},
 						"secretName": "DataLakeSecret"
-					}
-				}
-			},
-			"dependsOn": [
-				"[concat(variables('factoryId'), '/linkedServices/ls_key_vault')]"
-			]
-		},
-		{
-			"name": "[concat(parameters('factoryName'), '/ls_dbSQL')]",
-			"type": "Microsoft.DataFactory/factories/linkedServices",
-			"apiVersion": "2018-06-01",
-			"properties": {
-				"annotations": [],
-				"type": "AzureSqlDatabase",
-				"typeProperties": {
-					"connectionString": {
-						"type": "AzureKeyVaultSecret",
-						"store": {
-							"referenceName": "ls_key_vault",
-							"type": "LinkedServiceReference"
-						},
-						"secretName": "[parameters('ls_dbSQL_properties_typeProperties_connectionString_secretName')]"
 					}
 				}
 			},
