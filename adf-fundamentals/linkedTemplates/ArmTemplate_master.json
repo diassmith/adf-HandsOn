@@ -11,6 +11,10 @@
 			"type": "string",
 			"defaultValue": "https://adlsadffundamentals.dfs.core.windows.net/"
 		},
+		"ls_dbSQL_properties_typeProperties_connectionString_secretName": {
+			"type": "string",
+			"defaultValue": "AzureSQLDatabase"
+		},
 		"ls_key_vault_properties_typeProperties_baseUrl": {
 			"type": "string",
 			"defaultValue": "https://akv-adf-fundamentals.vault.azure.net/"
@@ -47,6 +51,9 @@
 					},
 					"ls_datalake_properties_typeProperties_url": {
 						"value": "[parameters('ls_datalake_properties_typeProperties_url')]"
+					},
+					"ls_dbSQL_properties_typeProperties_connectionString_secretName": {
+						"value": "[parameters('ls_dbSQL_properties_typeProperties_connectionString_secretName')]"
 					}
 				}
 			},

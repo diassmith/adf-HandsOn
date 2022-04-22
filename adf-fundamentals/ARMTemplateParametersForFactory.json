@@ -8,6 +8,9 @@
 		"ls_datalake_properties_typeProperties_url": {
 			"value": "https://adlsadffundamentals.dfs.core.windows.net/"
 		},
+		"ls_dbSQL_properties_typeProperties_connectionString_secretName": {
+			"value": "AzureSQLDatabase"
+		},
 		"ls_key_vault_properties_typeProperties_baseUrl": {
 			"value": "https://akv-adf-fundamentals.vault.azure.net/"
 		}

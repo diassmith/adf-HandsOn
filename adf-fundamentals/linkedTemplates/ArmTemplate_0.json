@@ -14,6 +14,10 @@
 		"ls_datalake_properties_typeProperties_url": {
 			"type": "string",
 			"defaultValue": "https://adlsadffundamentals.dfs.core.windows.net/"
+		},
+		"ls_dbSQL_properties_typeProperties_connectionString_secretName": {
+			"type": "string",
+			"defaultValue": "AzureSQLDatabase"
 		}
 	},
 	"variables": {
@@ -57,51 +61,25 @@
 			]
 		},
 		{
-			"name": "[concat(parameters('factoryName'), '/ds_csv_generic')]",
-			"type": "Microsoft.DataFactory/factories/datasets",
+			"name": "[concat(parameters('factoryName'), '/ls_dbSQL')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
 			"apiVersion": "2018-06-01",
 			"properties": {
-				"linkedServiceName": {
-					"referenceName": "ls_datalake",
-					"type": "LinkedServiceReference"
-				},
-				"parameters": {
-					"containerName": {
-						"type": "string"
-					},
-					"fileName": {
-						"type": "string"
-					},
-					"separatorName": {
-						"type": "string"
-					}
-				},
 				"annotations": [],
-				"type": "DelimitedText",
+				"type": "AzureSqlDatabase",
 				"typeProperties": {
-					"location": {
-						"type": "AzureBlobFSLocation",
-						"fileName": {
-							"value": "@dataset().fileName",
-							"type": "Expression"
+					"connectionString": {
+						"type": "AzureKeyVaultSecret",
+						"store": {
+							"referenceName": "ls_key_vault",
+							"type": "LinkedServiceReference"
 						},
-						"fileSystem": {
-							"value": "@dataset().containerName",
-							"type": "Expression"
-						}
-					},
-					"columnDelimiter": {
-						"value": "@dataset().separatorName",
-						"type": "Expression"
-					},
-					"escapeChar": "\\",
-					"firstRowAsHeader": true,
-					"quoteChar": "\""
-				},
-				"schema": []
+						"secretName": "[parameters('ls_dbSQL_properties_typeProperties_connectionString_secretName')]"
+					}
+				}
 			},
 			"dependsOn": [
-				"[concat(variables('factoryId'), '/linkedServices/ls_datalake')]"
+				"[concat(variables('factoryId'), '/linkedServices/ls_key_vault')]"
 			]
 		},
 		{
@@ -127,7 +105,7 @@
 					"location": {
 						"type": "AzureBlobFSLocation",
 						"fileName": {
-							"value": "@concat(dataset().fileName,'.parquet')",
+							"value": "@dataset().fileName",
 							"type": "Expression"
 						},
 						"fileSystem": {
@@ -144,13 +122,48 @@
 			]
 		},
 		{
-			"name": "[concat(parameters('factoryName'), '/pl_HandOn1')]",
+			"name": "[concat(parameters('factoryName'), '/ds_sql_generic')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "ls_dbSQL",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"schemaName": {
+						"type": "string"
+					},
+					"tableName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": {
+						"value": "@dataset().schemaName",
+						"type": "Expression"
+					},
+					"table": {
+						"value": "@dataset().tableName",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_dbSQL')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_HandsOn2')]",
 			"type": "Microsoft.DataFactory/factories/pipelines",
 			"apiVersion": "2018-06-01",
 			"properties": {
 				"activities": [
 					{
-						"name": "GetMetadataRead_CSV_File",
+						"name": "GetMetadata_ReadingParquetFiles",
 						"type": "GetMetadata",
 						"dependsOn": [],
 						"policy": {
@@ -163,12 +176,11 @@
 						"userProperties": [],
 						"typeProperties": {
 							"dataset": {
-								"referenceName": "ds_csv_generic",
+								"referenceName": "ds_parquetfiles_generic",
 								"type": "DatasetReference",
 								"parameters": {
-									"containerName": "csvfiles",
-									"fileName": "*",
-									"separatorName": "*"
+									"containerName": "parquetfiles",
+									"fileName": "*"
 								}
 							},
 							"fieldList": [
@@ -178,41 +190,15 @@
 								"type": "AzureBlobFSReadSettings",
 								"recursive": true,
 								"enablePartitionDiscovery": false
-							},
-							"formatSettings": {
-								"type": "DelimitedTextReadSettings"
 							}
 						}
 					},
 					{
-						"name": "FilterMovieDB",
-						"type": "Filter",
-						"dependsOn": [
-							{
-								"activity": "GetMetadataRead_CSV_File",
-								"dependencyConditions": [
-									"Succeeded"
-								]
-							}
-						],
-						"userProperties": [],
-						"typeProperties": {
-							"items": {
-								"value": "@activity('GetMetadataRead_CSV_File').output.childItems",
-								"type": "Expression"
-							},
-							"condition": {
-								"value": "@not(equals(toLower(item().name),'moviesDB.csv'))",
-								"type": "Expression"
-							}
-						}
-					},
-					{
-						"name": "ForEach_CSVs",
+						"name": "ForEach_ParquetFilesList",
 						"type": "ForEach",
 						"dependsOn": [
 							{
-								"activity": "FilterMovieDB",
+								"activity": "GetMetadata_ReadingParquetFiles",
 								"dependencyConditions": [
 									"Succeeded"
 								]
@@ -221,12 +207,12 @@
 						"userProperties": [],
 						"typeProperties": {
 							"items": {
-								"value": "@activity('FilterMovieDB').output.value",
+								"value": "@activity('GetMetadata_ReadingParquetFiles').output.childItems",
 								"type": "Expression"
 							},
 							"activities": [
 								{
-									"name": "csv to Parquet",
+									"name": "parquet to SQL",
 									"type": "Copy",
 									"dependsOn": [],
 									"policy": {
@@ -239,24 +225,19 @@
 									"userProperties": [],
 									"typeProperties": {
 										"source": {
-											"type": "DelimitedTextSource",
+											"type": "ParquetSource",
 											"storeSettings": {
 												"type": "AzureBlobFSReadSettings",
 												"recursive": true,
 												"enablePartitionDiscovery": false
-											},
-											"formatSettings": {
-												"type": "DelimitedTextReadSettings"
 											}
 										},
 										"sink": {
-											"type": "ParquetSink",
-											"storeSettings": {
-												"type": "AzureBlobFSWriteSettings"
-											},
-											"formatSettings": {
-												"type": "ParquetWriteSettings"
-											}
+											"type": "AzureSqlSink",
+											"writeBehavior": "insert",
+											"sqlWriterUseTableLock": false,
+											"tableOption": "autoCreate",
+											"disableMetricsCollection": false
 										},
 										"enableStaging": false,
 										"translator": {
@@ -270,26 +251,25 @@
 									},
 									"inputs": [
 										{
-											"referenceName": "ds_csv_generic",
-											"type": "DatasetReference",
-											"parameters": {
-												"containerName": "csvfiles",
-												"fileName": {
-													"value": "@item().name",
-													"type": "Expression"
-												},
-												"separatorName": ";"
-											}
-										}
-									],
-									"outputs": [
-										{
 											"referenceName": "ds_parquetfiles_generic",
 											"type": "DatasetReference",
 											"parameters": {
 												"containerName": "parquetfiles",
 												"fileName": {
-													"value": "@replace(item().name,'.csv','.parquet')",
+													"value": "@toLower(item().name)",
+													"type": "Expression"
+												}
+											}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "ds_sql_generic",
+											"type": "DatasetReference",
+											"parameters": {
+												"schemaName": "SalesLT",
+												"tableName": {
+													"value": "@replace(toLower(item().name),'.parquet' ,'')",
 													"type": "Expression"
 												}
 											}
@@ -298,6 +278,60 @@
 								}
 							]
 						}
+					},
+					{
+						"name": "Procedure_RemovingDuplicatedCities",
+						"type": "SqlServerStoredProcedure",
+						"dependsOn": [
+							{
+								"activity": "ForEach_ParquetFilesList",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"storedProcedureName": "[[SalesLT].[remove_cities_duplicated]"
+						},
+						"linkedServiceName": {
+							"referenceName": "ls_dbSQL",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "Procedure_RemovingDuplicateColors",
+						"type": "SqlServerStoredProcedure",
+						"dependsOn": [
+							{
+								"activity": "ForEach_ParquetFilesList",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"storedProcedureName": "[[SalesLT].[remove_colors_duplicated]"
+						},
+						"linkedServiceName": {
+							"referenceName": "ls_dbSQL",
+							"type": "LinkedServiceReference"
+						}
 					}
 				],
 				"policy": {
@@ -305,13 +339,14 @@
 					"cancelAfter": {}
 				},
 				"folder": {
-					"name": "HandsOn01"
+					"name": "HandsOn2"
 				},
 				"annotations": []
 			},
 			"dependsOn": [
-				"[concat(variables('factoryId'), '/datasets/ds_csv_generic')]",
-				"[concat(variables('factoryId'), '/datasets/ds_parquetfiles_generic')]"
+				"[concat(variables('factoryId'), '/datasets/ds_parquetfiles_generic')]",
+				"[concat(variables('factoryId'), '/linkedServices/ls_dbSQL')]",
+				"[concat(variables('factoryId'), '/datasets/ds_sql_generic')]"
 			]
 		}
 	]
