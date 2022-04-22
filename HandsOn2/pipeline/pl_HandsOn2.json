@@ -95,7 +95,7 @@
 									"parameters": {
 										"containerName": "parquetfiles",
 										"fileName": {
-											"value": "@replace(toLower(item().name),'.parquet' ,'')",
+											"value": "@toLower(item().name)",
 											"type": "Expression"
 										}
 									}
@@ -116,6 +116,60 @@
 							]
 						}
 					]
+				}
+			},
+			{
+				"name": "Procedure_RemovingDuplicatedCities",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "ForEach_ParquetFilesList",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[SalesLT].[remove_cities_duplicated]"
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_dbSQL",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Procedure_RemovingDuplicateColors",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "ForEach_ParquetFilesList",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[SalesLT].[remove_colors_duplicated]"
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_dbSQL",
+					"type": "LinkedServiceReference"
 				}
 			}
 		],
