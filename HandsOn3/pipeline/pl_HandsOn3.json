@@ -33,7 +33,7 @@
 				}
 			},
 			{
-				"name": "ForEach1",
+				"name": "ForEach_loop_table",
 				"type": "ForEach",
 				"dependsOn": [
 					{
