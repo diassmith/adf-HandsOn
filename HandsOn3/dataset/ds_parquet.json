@@ -9,9 +9,6 @@
 			"containerName": {
 				"type": "string"
 			},
-			"DirectoryName": {
-				"type": "string"
-			},
 			"fileName": {
 				"type": "string"
 			}
@@ -20,7 +17,15 @@
 		"type": "Parquet",
 		"typeProperties": {
 			"location": {
-				"type": "AzureBlobFSLocation"
+				"type": "AzureBlobFSLocation",
+				"fileName": {
+					"value": "@dataset().fileName",
+					"type": "Expression"
+				},
+				"fileSystem": {
+					"value": "@dataset().containerName",
+					"type": "Expression"
+				}
 			},
 			"compressionCodec": "snappy"
 		},
